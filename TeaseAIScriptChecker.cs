@@ -9,7 +9,6 @@ namespace TeaseAIScriptChecker
     static class TeaseAIScriptChecker
     {
         /// <summary>
-        /// Der Haupteinstiegspunkt für die Anwendung.
         /// </summary>
         [STAThread]
         static void Main()

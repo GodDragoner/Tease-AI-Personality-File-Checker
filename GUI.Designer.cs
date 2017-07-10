@@ -3,14 +3,11 @@
     partial class GUI
     {
         /// <summary>
-        /// Erforderliche Designervariable.
         /// </summary>
         private System.ComponentModel.IContainer components = null;
 
         /// <summary>
-        /// Verwendete Ressourcen bereinigen.
         /// </summary>
-        /// <param name="disposing">True, wenn verwaltete Ressourcen gelöscht werden sollen; andernfalls False.</param>
         protected override void Dispose(bool disposing)
         {
             if (disposing && (components != null))
@@ -168,7 +165,7 @@
             this.Controls.Add(this.selectFolderButton);
             this.Controls.Add(this.textBox1);
             this.Name = "GUI";
-            this.Text = "TeaseAIScriptChecker (1.1) by GodDragon";
+            this.Text = "TeaseAIScriptChecker (1.2) by GodDragon";
             this.Load += new System.EventHandler(this.GUI_Load);
             this.ResumeLayout(false);
             this.PerformLayout();
