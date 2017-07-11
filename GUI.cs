@@ -1,14 +1,8 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
 using System.IO;
-using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace TeaseAIScriptChecker
@@ -27,7 +21,7 @@ namespace TeaseAIScriptChecker
         private Dictionary<string, ArrayList> flagUsageInFiles;
         private Dictionary<string, ArrayList> dateUsageInFiles;
         private Dictionary<string, ArrayList> vocabularyUsageInFiles;
-        private Dictionary<string, int> gotoPointers;
+        private Dictionary<string, ArrayList> gotoPointers;
         private Dictionary<string, int> jumpPoints;
         private ArrayList vocabularyFound;
 
@@ -41,7 +35,7 @@ namespace TeaseAIScriptChecker
         private void selectFolderButton_Click(object sender, EventArgs e)
         {
 
-            if (!isValidPath(textBox1.Text))
+            if (!IsValidPath(textBox1.Text))
             {
                 folderBrowserDialog1.SelectedPath = Directory.GetCurrentDirectory();
             } else
@@ -69,13 +63,13 @@ namespace TeaseAIScriptChecker
         private void startScanButton_Click(object sender, EventArgs e)
         {
 
-            if (!isValidPath(textBox1.Text))
+            if (!IsValidPath(textBox1.Text))
             {
                 MessageBox.Show("Please use a valid path to a folder.");
                 return;
             }
 
-            bool checkPaths = isValidPath(teaseAIFolderTextBox.Text);
+            bool checkPaths = IsValidPath(teaseAIFolderTextBox.Text);
 
             if (checkPaths && !Directory.Exists(teaseAIFolderTextBox.Text + "\\System"))
             {
@@ -83,7 +77,7 @@ namespace TeaseAIScriptChecker
                 return;
             }
 
-            enableControls(false);
+            EnableControls(false);
 
             logFileWriter = new System.IO.StreamWriter(Directory.GetCurrentDirectory() + "/fileCheckerLog.txt");
 
@@ -110,11 +104,11 @@ namespace TeaseAIScriptChecker
             int amount = filesToScan.Count;
             scanProgressBar.Maximum = amount;
 
-            writeLineToLog("Starting check of " + amount + " script files in folder '" + Path.GetFileName(textBox1.Text) + "'.", false);
+            WriteLineToLog("Starting check of " + amount + " script files in folder '" + Path.GetFileName(textBox1.Text) + "'.", false);
 
             if(!checkPaths)
             {
-                writeLineToLog("Skipping check of paths (videos/sounds/images) because no valid tease ai folder was set.", false);
+                WriteLineToLog("Skipping check of paths (videos/sounds/images) because no valid tease ai folder was set.", false);
             }
 
             variableUsageInFiles = new Dictionary<string, ArrayList>();
@@ -143,7 +137,7 @@ namespace TeaseAIScriptChecker
 
                 fileProducedErrors = false;
 
-                writeLineToLog("Checking script " + currentFilePath + ".", true);
+                WriteLineToLog("Checking script " + currentFilePath + ".", true);
 
                 scanProgressBar.Value = x + 1;
                 infoTextBox.Text = "Checking script " + currentFilePath + " (" + x + "/" + amount + ").";
@@ -158,124 +152,146 @@ namespace TeaseAIScriptChecker
                 currentLine = 0;
                 string line;
 
-                gotoPointers = new Dictionary<string, int>();
+                gotoPointers = new Dictionary<string, ArrayList>();
                 jumpPoints = new Dictionary<string, int>();
 
                 System.IO.StreamReader file = new System.IO.StreamReader(currentFilePath);
                 while ((line = file.ReadLine()) != null)
                 {
                     currentLine++;
-                    line = stripUselssWhitespace(line);
+                    line = StripUselssWhitespace(line);
                     currentLineString = line;
 
-                    //@Goto
-                    foreach (string targetPoint in getTextWithinRecognition(line, "@Goto(", ")", true))
+                    // @Goto
+                    int pointerAmount = 0;
+                    foreach (string targetPoint in GetTextWithinRecognition(line, "@Goto(", ")", true))
                     {
-                        registerPointerPoint(targetPoint);
+                        RegisterPointerPoint(targetPoint);
+                        pointerAmount++;
                     }
 
-                    //Then
-                    foreach (string targetPoint in getTextWithinRecognition(line, "Then(", ")", true))
+                    // Then
+                    foreach (string targetPoint in GetTextWithinRecognition(line, "Then(", ")", true))
                     {
-                        registerPointerPoint(targetPoint);
+                        RegisterPointerPoint(targetPoint);
                     }
 
-                    //Date difference interaction
-                    foreach (string variableName in getTextWithinRecognition(line, "#DateDifference(", ",", false))
+                    // Date difference interaction
+                    foreach (string variableName in GetTextWithinRecognition(line, "#DateDifference(", ",", false))
                     {
-                        registerDateInteraction(variableName);
+                        RegisterDateInteraction(variableName);
                     }
 
 
-                    //SetDate interaction
-                    foreach (string variableName in getTextWithinRecognition(line, "@SetDate(", ",", false))
+                    // SetDate interaction
+                    foreach (string variableName in GetTextWithinRecognition(line, "@SetDate(", ",", false))
                     {
-                        registerDateInteraction(variableName);
+                        RegisterDateInteraction(variableName);
                     }
 
-                    //SetDate interaction
+                    // Check Date interaction
                     int checkDateIndex = 0;
-                    foreach (string variableName in getTextWithinRecognition(line, "@CheckDate(", ",", false))
+                    foreach (string variableName in GetTextWithinRecognition(line, "@CheckDate(", ")", true))
                     {
-                        registerDateInteraction(variableName);
+                        if (checkDateIndex == 0)
+                        {
+                            RegisterDateInteraction(variableName);
+                        
+                        } else if(checkDateIndex == 1)
+                        {
+                            RegisterPointerPoint(variableName);
+                        } else
+                        {
+                            WriteLineToLog("@CheckDate only allows exactly two parameters. More parameters found in string '" + line + "' in line " + currentLine + ". Usage: '@CheckDate(VarName, gotoLine)'.", false);
+                        }
+
                         checkDateIndex++;
                     }
 
-                    //CheckFlag
-                    checkLineForFlagUsage(line, "@CheckFlag(", true);
+                    // CheckDate argument check
+                    if(checkDateIndex == 1)
+                    {
+                        WriteLineToLog("@CheckDate only allows exactly two parameters. One parameter missing in string '" + line + "' in line " + currentLine + ". Usage: '@CheckDate(VarName, gotoLine)'.", false);
+                    }
 
-                    //Flag
-                    checkLineForFlagUsage(line, "@Flag(", true);
+                    // CheckFlag (If second argument it is registered as a pointer because it is a goto line if check flag is true)
+                    bool checkFlagFound = CheckLineForFlagUsage(line, "@CheckFlag(", true);
 
-                    //SetFlag
-                    checkLineForFlagUsage(line, "@SetFlag(", false);
+                    // Flag
+                    CheckLineForFlagUsage(line, "@Flag(", true);
 
-                    //DeleteFlag
-                    checkLineForFlagUsage(line, "@DeleteFlag(", false);
+                    // SetFlag
+                    CheckLineForFlagUsage(line, "@SetFlag(", true);
 
-                    //NotFlag
-                    checkLineForFlagUsage(line, "@NotFlag(", true);
+                    // DeleteFlag
+                    CheckLineForFlagUsage(line, "@DeleteFlag(", true);
 
-                    //TempFlag
-                    checkLineForFlagUsage(line, "@TempFlag(", false);
+                    // NotFlag
+                    CheckLineForFlagUsage(line, "@NotFlag(", true);
 
-                    //PlaySound
-                    if (line.Contains("@PlayAudio[") && !isStringInComment(line, "@PlayAudio["))
+                    // TempFlag
+                    CheckLineForFlagUsage(line, "@TempFlag(", true);
+
+                    // Flag Or
+                    CheckLineForFlagUsage(line, "@FlagOr(", true);
+
+                    // PlaySound
+                    if (line.Contains("@PlayAudio[") && !IsStringInComment(line, "@PlayAudio["))
                     {
                         string startString = "@PlayAudio[";
                         int startIndex = line.IndexOf(startString);
                         string remainingString = line.Substring(startIndex + startString.Length);
                         int endIndex = remainingString.IndexOf("]");
                         string path = remainingString.Substring(0, endIndex);
-                        checkPathValidity("Audio", path);
+                        CheckPathValidity("Audio", path);
                     }
 
-                    //ShowImage
-                    if (line.Contains("@ShowImage[") && !isStringInComment(line, "@ShowImage["))
+                    // ShowImage
+                    if (line.Contains("@ShowImage[") && !IsStringInComment(line, "@ShowImage["))
                     {
                         string startString = "@ShowImage[";
                         int startIndex = line.IndexOf(startString);
                         string remainingString = line.Substring(startIndex + startString.Length);
                         int endIndex = remainingString.IndexOf("]");
                         string path = remainingString.Substring(0, endIndex);
-                        checkPathValidity("Images", path);
+                        CheckPathValidity("Images", path);
                     }
 
-                    //ShowVideo
-                    if (line.Contains("@ShowVideo[") && !isStringInComment(line, "@ShowVideo["))
+                    // ShowVideo
+                    if (line.Contains("@ShowVideo[") && !IsStringInComment(line, "@ShowVideo["))
                     {
                         string startString = "@ShowVideo[";
                         int startIndex = line.IndexOf(startString);
                         string remainingString = line.Substring(startIndex + startString.Length);
                         int endIndex = remainingString.IndexOf("]");
                         string path = remainingString.Substring(0, endIndex);
-                        checkPathValidity("Video", path);
+                        CheckPathValidity("Video", path);
                     }
 
-                    //CallReturn
-                    if (line.Contains("@CallReturn(") && !isStringInComment(line, "@CallReturn("))
+                    // CallReturn
+                    if (line.Contains("@CallReturn(") && !IsStringInComment(line, "@CallReturn("))
                     {
                         string startString = "@CallReturn(";
                         int startIndex = line.IndexOf(startString);
                         string remainingString = line.Substring(startIndex + startString.Length);
                         int endIndex = remainingString.IndexOf(")");
                         string path = remainingString.Substring(0, endIndex);
-                        checkPathValidity("", textBox1.Text, path);
+                        CheckPathValidity("", textBox1.Text, path);
                     }
 
-                    //Call
-                    if (line.Contains("@Call(") && !isStringInComment(line, "@Call("))
+                    // Call
+                    if (line.Contains("@Call(") && !IsStringInComment(line, "@Call("))
                     {
                         string startString = "@Call(";
                         int startIndex = line.IndexOf(startString);
                         string remainingString = line.Substring(startIndex + startString.Length);
                         int endIndex = remainingString.IndexOf(")");
                         string path = remainingString.Substring(0, endIndex);
-                        checkPathValidity("", textBox1.Text, path);
+                        CheckPathValidity("", textBox1.Text, path);
                     }
 
-                    //Variable usage
-                    if (line.Contains("[") && !isStringInComment(line, "["))
+                    // Variable usage
+                    if (line.Contains("[") && !IsStringInComment(line, "["))
                     {
                         int splitIndex = 0;
                         foreach (string substring in line.Split('['))
@@ -286,23 +302,23 @@ namespace TeaseAIScriptChecker
                                 string variableName = substring.Substring(0, endIndex);
 
                                 double variable;
-                                //Not an int (adding stuff or whatever) and not a function like random
+                                // Not an int (adding stuff or whatever) and not a function like random
                                 if (!double.TryParse(variableName, out variable) && !variableName.Contains("#"))
                                 {
-                                    //Not an answer to a question
+                                    // Not an answer to a question
                                     if (!line.StartsWith("[" + variableName + "]"))
                                     {
-                                        //Not a path of some sort
+                                        // Not a path of some sort
                                         if (!variableName.Contains("/") && !variableName.Contains("\\"))
                                         {
-                                            //Ignore the second part (@CountVar[var, stop]), might need to only allow this for @CountVar
+                                            // Ignore the second part (@CountVar[var, stop]), might need to only allow this for @CountVar
                                             if(variableName.Contains(","))
                                             {
                                                 variableName = variableName.Split(',')[0];
                                             }
 
-                                            variableName = stripUselssWhitespace(variableName);
-                                            registerVariableInteraction(variableName);
+                                            variableName = StripUselssWhitespace(variableName);
+                                            RegisterVariableInteraction(variableName);
                                         }
                                     }
                                 }
@@ -320,13 +336,13 @@ namespace TeaseAIScriptChecker
                         }
                     }
 
-                    //Vocabulary Usage
-                    if (line.Contains("#") && !isStringInComment(line, "#"))
+                    // Vocabulary Usage
+                    if (line.Contains("#") && !IsStringInComment(line, "#"))
                     {
                         int splitIndex = 0;
                         foreach (string substring in line.Split('#'))
                         {
-                            //Skip stuff that we don't want
+                            // Skip stuff that we don't want
                             if(substring == null || substring.StartsWith("DateDifference(") || substring.StartsWith("Random(") || substring.Length < 1 || substring.Equals(" ") ||
                                 splitIndex == 0 && !line.StartsWith("#") || substring.StartsWith("Var["))
                             {
@@ -343,39 +359,39 @@ namespace TeaseAIScriptChecker
                                 endIndex = substring.Length;
                             }
 
-                            string vocabName = stripUselssWhitespace(substring.Substring(0, endIndex));
+                            string vocabName = StripUselssWhitespace(substring.Substring(0, endIndex));
           
-                            registerVocabInteraction(vocabName);
+                            RegisterVocabInteraction(vocabName);
 
                             splitIndex++;
                         }
                     }
 
-                    //Jump point
+                    // Jump point
                     if (line.StartsWith("(") && line.Contains("(") && line.Contains(")"))
                     {
-                        //No @ in ()
+                        // No @ in ()
                         if (!line.Contains("@") || line.IndexOf("@") > line.IndexOf(")"))
                         {
-                            foreach (string jumpPointName in getTextWithinRecognition(line, "(", ")", false))
+                            foreach (string jumpPointName in GetTextWithinRecognition(line, "(", ")", false))
                             {
                                 int previousLine;
                                 if (jumpPoints.TryGetValue(jumpPointName, out previousLine))
                                 {
-                                    writeLineToLog("Duplicated jump point '" + jumpPointName + "' in line " + currentLine + " at string '" + line + "'. Previous same named jump point was in line " + previousLine + ".", false);
+                                    WriteLineToLog("Duplicated jump point '" + jumpPointName + "' in line " + currentLine + " at string '" + line + "'. Previous same named jump point was in line " + previousLine + ".", false);
                                     fileProducedErrors = true;
                                 }
 
                                 jumpPoints[jumpPointName] = currentLine;
                                 if (debugLogCheckBox.Checked)
                                 {
-                                    writeLineToLog("Found jump point " + jumpPointName + " in line " + currentLine, true);
+                                    WriteLineToLog("Found jump point " + jumpPointName + " in line " + currentLine, true);
                                 }
                             }
                         }
                     }
 
-                    //Unclosed brackets
+                    // Unclosed brackets
                     if (line.Contains("("))
                     {
                         int openCount = line.Split('(').Length - 1;
@@ -383,7 +399,7 @@ namespace TeaseAIScriptChecker
 
                         if (openCount != closeCount)
                         {
-                            writeLineToLog("Disparate amount of '(' / ')' brackets found in line " + currentLine + " at string '" + line + "'.", false);
+                            WriteLineToLog("Disparate amount of '(' / ')' brackets found in line " + currentLine + " at string '" + line + "'.", false);
                             fileProducedErrors = true;
                         }
                     }
@@ -395,48 +411,51 @@ namespace TeaseAIScriptChecker
 
                         if (openCount != closeCount)
                         {
-                            writeLineToLog("Disparate amount of '[' / ']' brackets found in line " + currentLine + " at string '" + line + "'.", false);
+                            WriteLineToLog("Disparate amount of '[' / ']' brackets found in line " + currentLine + " at string '" + line + "'.", false);
                             fileProducedErrors = true;
                         }
                     }
 
-                    //Wrong usage of random
+                    // Wrong usage of random
                     if (line.Contains("#Random["))
                     {
-                        writeLineToLog("Wrong brackets at #Random '[]' instead of'()' found in line " + currentLine + " at string '" + line + "'.", false);
+                        WriteLineToLog("Wrong brackets at #Random '[]' instead of'()' found in line " + currentLine + " at string '" + line + "'.", false);
                         fileProducedErrors = true;
                     }
                 }
 
                 file.Close();
 
-                foreach (KeyValuePair<string, int> entry in gotoPointers)
+                foreach (KeyValuePair<string, ArrayList> entry in gotoPointers)
                 {
                     int value;
                     if(!jumpPoints.TryGetValue(entry.Key, out value))
                     {
                         if (logCheckBox.Checked)
                         {
-                            writeLineToLog("Found pointer '" + entry.Key + "' in line " + (entry.Value) + " with no jump point.", false);
-                            fileProducedErrors = true;
+                            foreach(string pointer in entry.Value)
+                            {
+                                WriteLineToLog("Found pointer '" + entry.Key + "'" + pointer + " with no jump point.", false);
+                                fileProducedErrors = true;
+                            }
                         }
                     }
                 }
 
                 if (fileProducedErrors)
                 {
-                    writeLineToLog(" ", false);
-                    writeLineToLog("All above issues where found in file '" + currentFilePath + "'.", false);
-                    writeLineToLog("----------------------------------------------------------------------------------------------------------------------------------------------------------------", false);
+                    WriteLineToLog(" ", false);
+                    WriteLineToLog("All above issues where found in file '" + currentFilePath + "'.", false);
+                    WriteLineToLog("----------------------------------------------------------------------------------------------------------------------------------------------------------------", false);
                 }
             }
 
-            //Variable usage
+            // Variable usage
             foreach (KeyValuePair<string, ArrayList> entry in variableUsageInFiles)
             {
                 if (entry.Value.Count <= 1)
                 {
-                    writeLineToLog("Variable '" + entry.Key + "' was only used once" + entry.Value[0], false);
+                    WriteLineToLog("Variable '" + entry.Key + "' was only used once" + entry.Value[0], false);
                 }
             }
 
@@ -445,7 +464,7 @@ namespace TeaseAIScriptChecker
             {
                 if (entry.Value.Count <= 1)
                 {
-                    writeLineToLog("Flag '" + entry.Key + "' was only used once" + entry.Value[0], false);
+                    WriteLineToLog("Flag '" + entry.Key + "' was only used once" + entry.Value[0], false);
                 }
             }
 
@@ -454,7 +473,7 @@ namespace TeaseAIScriptChecker
             {
                 if(!vocabularyFound.Contains(entry.Key))
                 {
-                    writeLineToLog("Vocabulary '" + entry.Key + "' was not known to the system" + entry.Value[0], false);
+                    WriteLineToLog("Vocabulary '" + entry.Key + "' was not known to the system" + entry.Value[0], false);
                 }
             }
 
@@ -463,47 +482,55 @@ namespace TeaseAIScriptChecker
             {
                 if (entry.Value.Count <= 1)
                 {
-                    writeLineToLog("Date variable '" + entry.Key + "' was only used once" + entry.Value[0], false);
+                    WriteLineToLog("Date variable '" + entry.Key + "' was only used once" + entry.Value[0], false);
                 }
 
                 ArrayList variableUsages;
                 if(variableUsageInFiles.TryGetValue(entry.Key, out variableUsages)) {
                     foreach(string variableUsage in variableUsages)
                     {
-                        writeLineToLog("Date variable '" + entry.Key + "' was used as a normal variable too" + variableUsage, false);
+                        WriteLineToLog("Date variable '" + entry.Key + "' was used as a normal variable too" + variableUsage, false);
                     }
                 }
             }
 
 
             infoTextBox.Text = "Finished checking " + amount + " script files.";
-            writeLineToLog("Finished checking " + amount + " script files.", false);
+            WriteLineToLog("Finished checking " + amount + " script files.", false);
 
             logFileWriter.Close();
 
-            enableControls(true);
+            EnableControls(true);
         }
 
-        private bool isValidPath(string path)
+        private bool IsValidPath(string path)
         {
             return path != null && path.Length > 0 && Directory.Exists(path);
         }
 
-        private void enableControls(bool enable)
+        private void EnableControls(bool enable)
         {
             foreach (var control in this.Controls)
                 ((Control)control).Enabled = enable;
         }
 
-        private void registerPointerPoint(string targetPoint)
+        private void RegisterPointerPoint(string targetPoint)
         {
-            targetPoint = stripUselssWhitespace(targetPoint);
+            targetPoint = StripUselssWhitespace(targetPoint);
 
-            gotoPointers[targetPoint] = currentLine;
-            writeLineToLog("Found pointer to " + targetPoint + " in line " + currentLine, true);
+            ArrayList value;
+            if (!gotoPointers.TryGetValue(targetPoint, out value))
+            {
+                value = new ArrayList();
+                gotoPointers[targetPoint] = value;
+            }
+
+            value.Add(" in string '" + currentLineString + "' in line " + currentLine + " in file '" + currentFilePath + "' ");
+
+            WriteLineToLog("Found pointer to " + targetPoint + " in line " + currentLine, true);
         }
 
-        private string stripUselssWhitespace(string s)
+        private string StripUselssWhitespace(string s)
         {
             while (s.StartsWith(" "))
             {
@@ -519,7 +546,7 @@ namespace TeaseAIScriptChecker
             return s;
         }
 
-        private void registerVariableInteraction(String variableName)
+        private void RegisterVariableInteraction(String variableName)
         {
 
             ArrayList value;
@@ -531,10 +558,10 @@ namespace TeaseAIScriptChecker
 
             value.Add(" in string '" + currentLineString + "' in line " + currentLine + " in file '" + currentFilePath + "'.");
 
-            writeLineToLog("Found usage of variable '" + variableName + "' in line " + currentLine, true);
+            WriteLineToLog("Found usage of variable '" + variableName + "' in line " + currentLine, true);
         }
 
-        private void registerVocabInteraction(String vocabName)
+        private void RegisterVocabInteraction(String vocabName)
         {
             vocabName = "#" + vocabName;
 
@@ -547,11 +574,11 @@ namespace TeaseAIScriptChecker
 
             value.Add(" in string '" + currentLineString + "' in line " + currentLine + " in file '" + currentFilePath + "'.");
 
-            writeLineToLog("Found usage of vocabulary '" + vocabName + "' in line " + currentLine, true);
+            WriteLineToLog("Found usage of vocabulary '" + vocabName + "' in line " + currentLine, true);
         }
 
 
-        private void registerDateInteraction(String variableName)
+        private void RegisterDateInteraction(String variableName)
         {
             ArrayList value;
             if (!dateUsageInFiles.TryGetValue(variableName, out value))
@@ -562,11 +589,11 @@ namespace TeaseAIScriptChecker
 
             value.Add(" in string '" + currentLineString + "' in line " + currentLine + " in file '" + currentFilePath + "'.");
 
-            writeLineToLog("Found usage of date variable '" + variableName + "' in line " + currentLine, true);
+            WriteLineToLog("Found usage of date variable '" + variableName + "' in line " + currentLine, true);
         }
 
 
-        private void registerFlagInteraction(String flagName)
+        private void RegisterFlagInteraction(String flagName)
         {
 
             ArrayList value;
@@ -578,16 +605,16 @@ namespace TeaseAIScriptChecker
 
             value.Add(" in string '" + currentLineString + "' in line " + currentLine + " in file '" + currentFilePath + "'.");
 
-            writeLineToLog("Found usage of flag '" + flagName + "' in line " + currentLine, true);
+            WriteLineToLog("Found usage of flag '" + flagName + "' in line " + currentLine, true);
         }
 
 
-        private void checkPathValidity(string subFolder, string path)
+        private void CheckPathValidity(string subFolder, string path)
         {
-            checkPathValidity(subFolder, teaseAIFolderTextBox.Text, path);
+            CheckPathValidity(subFolder, teaseAIFolderTextBox.Text, path);
         }
 
-        private void checkPathValidity(string subFolder, string rootPath, string path)
+        private void CheckPathValidity(string subFolder, string rootPath, string path)
         {
             path = path.Replace("/", "\\");
 
@@ -601,15 +628,15 @@ namespace TeaseAIScriptChecker
                 path = "\\" + subFolder + path;
             }
 
-            writeLineToLog("Checking path '" + rootPath + path + "' for validity.", true);
+            WriteLineToLog("Checking path '" + rootPath + path + "' for validity.", true);
 
-            //Check for not random but set path
+            // Check for not random but set path
             if (!path.Contains("*"))
             {
-                //Check for set path
+                // Check for set path
                 if (!File.Exists(rootPath + path))
                     {
-                        writeLineToLog("Invalid path to file '" + rootPath + path + "' in line " + currentLine + ". Dynamic given path was '" + path + "'.", false);
+                        WriteLineToLog("Invalid path to file '" + rootPath + path + "' in line " + currentLine + ". Dynamic given path was '" + path + "'.", false);
                         fileProducedErrors = true;
                 }
             }
@@ -618,24 +645,24 @@ namespace TeaseAIScriptChecker
                 string pathToFolder = path.Substring(0, path.LastIndexOf("\\"));
                 if (!Directory.Exists(rootPath + pathToFolder))
                 {
-                    writeLineToLog("Invalid path to folder '" + rootPath + pathToFolder + "' in line " + currentLine + ". Dynamic given path was '" + path + "'.", false);
+                    WriteLineToLog("Invalid path to folder '" + rootPath + pathToFolder + "' in line " + currentLine + ". Dynamic given path was '" + path + "'.", false);
                     fileProducedErrors = true;
                 } else
                 {
                     string[] filesNames = Directory.GetFiles(rootPath + pathToFolder, "*", SearchOption.AllDirectories);
 
-                    //File doesn't matter there just needs to be one file
+                    // File doesn't matter there just needs to be one file
                     if (path.EndsWith("*.*"))
                     {
                         if(filesNames.Length == 0)
                         {
-                            writeLineToLog("Empty folder for *.* file pattern. Path '" + rootPath + pathToFolder + "' in line " + currentLine + ". Dynamic given path was '" + path + "'.", false);
+                            WriteLineToLog("Empty folder for *.* file pattern. Path '" + rootPath + pathToFolder + "' in line " + currentLine + ". Dynamic given path was '" + path + "'.", false);
                             fileProducedErrors = true;
                             return;
                         }
                     }
 
-                    //Looking for a file with whatever extension but a specific name
+                    // Looking for a file with whatever extension but a specific name
                     if(path.EndsWith("*"))
                     {
                         string searchedFileName = path.Substring(path.LastIndexOf("\\") + 1, path.IndexOf("*") - path.LastIndexOf("\\") - 1);
@@ -653,14 +680,14 @@ namespace TeaseAIScriptChecker
                             }
                         }
 
-                        //Did not find a fitting file
+                        // Did not find a fitting file
                         if (!foundFileFitting)
                         {
-                            writeLineToLog("Folder did not contain any matching file with name '" + searchedFileName +  "' in line " + currentLine + ". Path '" + rootPath + pathToFolder + "'. Dynamic given path was '" + path + "'.", false);
+                            WriteLineToLog("Folder did not contain any matching file with name '" + searchedFileName +  "' in line " + currentLine + ". Path '" + rootPath + pathToFolder + "'. Dynamic given path was '" + path + "'.", false);
                             fileProducedErrors = true;
                         }
                     }
-                    //Looking for any file with a specific extension
+                    // Looking for any file with a specific extension
                     else if(path.Contains("*."))
                     {
                         string searchedFileExtension = path.Substring(path.LastIndexOf("*.") + 2);
@@ -670,7 +697,7 @@ namespace TeaseAIScriptChecker
                         {
                             String fileName = Path.GetFileName(subFilePath);
 
-                            //Do capital letters matter in file extensions?
+                            // Do capital letters matter in file extensions?
                             if (fileName.ToLower().EndsWith("." + searchedFileExtension))
                             {
                                 foundFileFitting = true;
@@ -678,10 +705,10 @@ namespace TeaseAIScriptChecker
                             }
                         }
 
-                        //Did not find a fitting file
+                        // Did not find a fitting file
                         if (!foundFileFitting)
                         {
-                            writeLineToLog("Folder did not contain any matching file with extension '" + searchedFileExtension + "' in line " + currentLine + ". Path '" + rootPath + pathToFolder + "'. Dynamic given path was '" + path + "'.", false);
+                            WriteLineToLog("Folder did not contain any matching file with extension '" + searchedFileExtension + "' in line " + currentLine + ". Path '" + rootPath + pathToFolder + "'. Dynamic given path was '" + path + "'.", false);
                             fileProducedErrors = true;
                         }
                     }
@@ -689,10 +716,10 @@ namespace TeaseAIScriptChecker
             }
         }
 
-        private ArrayList getTextWithinRecognition(string line, string begin, string end, bool allowEnumeration)
+        private ArrayList GetTextWithinRecognition(string line, string begin, string end, bool allowEnumeration)
         {
             ArrayList textPieces = new ArrayList();
-            if (line.Contains(begin) && !isStringInComment(line, begin))
+            if (line.Contains(begin) && !IsStringInComment(line, begin))
             {
                 string startString = begin;
                 int startIndex = line.IndexOf(startString);
@@ -701,56 +728,79 @@ namespace TeaseAIScriptChecker
 
                 if(endIndex < 0)
                 {
-                    writeLineToLog("Expected '" + end + "' in string '" + remainingString + "' to recognize the command. Failed to in string '" + line + "' in line " + currentLine + ".", false);
+                    WriteLineToLog("Expected '" + end + "' in string '" + remainingString + "' to recognize the command. Failed to in string '" + line + "' in line " + currentLine + ".", false);
                     fileProducedErrors = true;
                     return textPieces;
                 }
 
                 string flagNames = remainingString.Substring(0, endIndex);
 
-                //Check for multiple flagNames
+                // Check for multiple flagNames
                 if (flagNames.Contains(","))
                 {
                     if (allowEnumeration)
                     {
                         foreach (string substring in flagNames.Split(','))
                         {
-                            textPieces.Add(stripUselssWhitespace(substring));
+                            textPieces.Add(StripUselssWhitespace(substring));
                         }
                     }
                     else
                     {
-                        writeLineToLog("Invalid enumaration '" + flagNames + "' in string '" + line + "' in line " + currentLine + ". Enumeration is not allowed for '" + begin + "'.", false);
+                        WriteLineToLog("Invalid enumaration '" + flagNames + "' in string '" + line + "' in line " + currentLine + ". Enumeration is not allowed for '" + begin + "'.", false);
+                        fileProducedErrors = true;
                     }
                 }
                 else
                 {
-                    textPieces.Add(stripUselssWhitespace(flagNames));
+                    textPieces.Add(StripUselssWhitespace(flagNames));
                 }
             }
 
             return textPieces;
         }
 
-        private void checkLineForFlagUsage(string line, string flagRecognition, bool allowEnumeration)
+        private bool CheckLineForFlagUsage(string line, string flagRecognition, bool allowEnumeration)
         {
             int index = 0;
-            foreach(string flagName in getTextWithinRecognition(line, flagRecognition, ")", allowEnumeration))
+            string latestFlagNameFound = "";
+            foreach(string flagName in GetTextWithinRecognition(line, flagRecognition, ")", allowEnumeration))
             {
-                //Second argument is the goto line
-                if(flagRecognition.StartsWith("@CheckFlag(") && index == 1)
+
+                latestFlagNameFound = flagName;
+
+                // Second argument is the goto line
+                if (flagRecognition.StartsWith("@CheckFlag("))
                 {
-                    registerPointerPoint(flagName);
-                    return;
+                    if (index == 1)
+                    {
+                        RegisterPointerPoint(flagName);
+                        index++;
+                        return true;
+                    } else if(index > 1)
+                    {
+                        WriteLineToLog("@CheckFlag only allows a max of two arguments. More arguments found in string '" + line + "' in line " + currentLine + ". Usage: '@CheckFlag(flagName, gotoLine)'.", false);
+                        fileProducedErrors = true;
+                    }
                 }
 
-                registerFlagInteraction(flagName);
+                RegisterFlagInteraction(flagName);
                 index++;
             }
+
+            //Register pointer because checkflag goes to a pointer either given or the flag name is the pointer name
+            if (flagRecognition.StartsWith("@CheckFlag(") && index == 1)
+            {
+                //Latest FlagName should be the pointer name
+                RegisterPointerPoint(latestFlagNameFound);
+            }
+
+            // Just reports whether flag in the line was found
+            return index > 0;
         }
 
         //Not that effective
-        private int getAmountOfBracketsWithoutSmiley(string line, char bracket)
+        private int GetAmountOfBracketsWithoutSmiley(string line, char bracket)
         {
             int amount = 0;
             for (int x = 0; x < line.Length; x++)
@@ -787,14 +837,14 @@ namespace TeaseAIScriptChecker
             return amount;
         }
 
-        private bool lineContainsComment(string line)
+        private bool LineContainsComment(string line)
         {
             return line.Contains("//") || line.Contains("\\\\") || line.Contains("@Info(");
         }
 
-        private bool isStringInComment(string line, string sequence)
+        private bool IsStringInComment(string line, string sequence)
         {
-            if(lineContainsComment(line) && line.Contains(sequence))
+            if(LineContainsComment(line) && line.Contains(sequence))
             {
                 if(line.Contains("//"))
                 {
@@ -815,7 +865,7 @@ namespace TeaseAIScriptChecker
             return false;
         }
 
-        private void writeLineToLog(String line, bool debug)
+        private void WriteLineToLog(String line, bool debug)
         {
             if(logCheckBox.Checked) {
                 if (!debug || debugLogCheckBox.Checked)
@@ -839,7 +889,7 @@ namespace TeaseAIScriptChecker
 
         private void teaseAIFolderButton_Click(object sender, EventArgs e)
         {
-            if (!isValidPath(teaseAIFolderTextBox.Text))
+            if (!IsValidPath(teaseAIFolderTextBox.Text))
             {
                 teaseAIBrowserDialog.SelectedPath = Directory.GetCurrentDirectory();
             }
@@ -856,7 +906,7 @@ namespace TeaseAIScriptChecker
 
         private void textBox1_TextChanged(object sender, EventArgs e)
         {
-            if (isValidPath(textBox1.Text))
+            if (IsValidPath(textBox1.Text))
             {
                 try
                 {
@@ -875,7 +925,7 @@ namespace TeaseAIScriptChecker
 
         private void teaseAIFolderTextBox_TextChanged(object sender, EventArgs e)
         {
-            if(!ignoreTeaseAIPathChange && isValidPath(teaseAIFolderTextBox.Text))
+            if(!ignoreTeaseAIPathChange && IsValidPath(teaseAIFolderTextBox.Text))
             {
                 if(Directory.Exists(teaseAIFolderTextBox.Text + "\\Scripts"))
                 {
