@@ -165,7 +165,7 @@
             this.Controls.Add(this.selectFolderButton);
             this.Controls.Add(this.textBox1);
             this.Name = "GUI";
-            this.Text = "TeaseAIScriptChecker (1.2) by GodDragon";
+            this.Text = "TeaseAIScriptChecker (1.3) by GodDragon";
             this.Load += new System.EventHandler(this.GUI_Load);
             this.ResumeLayout(false);
             this.PerformLayout();

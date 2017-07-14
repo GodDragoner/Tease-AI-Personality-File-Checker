@@ -203,6 +203,7 @@ namespace TeaseAIScriptChecker
                         } else
                         {
                             WriteLineToLog("@CheckDate only allows exactly two parameters. More parameters found in string '" + line + "' in line " + currentLine + ". Usage: '@CheckDate(VarName, gotoLine)'.", false);
+                            fileProducedErrors = true;
                         }
 
                         checkDateIndex++;
@@ -212,6 +213,7 @@ namespace TeaseAIScriptChecker
                     if(checkDateIndex == 1)
                     {
                         WriteLineToLog("@CheckDate only allows exactly two parameters. One parameter missing in string '" + line + "' in line " + currentLine + ". Usage: '@CheckDate(VarName, gotoLine)'.", false);
+                        fileProducedErrors = true;
                     }
 
                     // CheckFlag (If second argument it is registered as a pointer because it is a goto line if check flag is true)
@@ -274,7 +276,18 @@ namespace TeaseAIScriptChecker
                         string startString = "@CallReturn(";
                         int startIndex = line.IndexOf(startString);
                         string remainingString = line.Substring(startIndex + startString.Length);
-                        int endIndex = remainingString.IndexOf(")");
+                        int endIndex;
+
+                        // Case of CallReturn(file, goto line)
+                        if (remainingString.Contains(",") && remainingString.IndexOf(",") < remainingString.IndexOf(")"))
+                        {
+                            endIndex = remainingString.IndexOf(",");
+                        }
+                        else
+                        {
+                            endIndex = remainingString.IndexOf(")");
+                        }
+
                         string path = remainingString.Substring(0, endIndex);
                         CheckPathValidity("", textBox1.Text, path);
                     }
@@ -285,7 +298,17 @@ namespace TeaseAIScriptChecker
                         string startString = "@Call(";
                         int startIndex = line.IndexOf(startString);
                         string remainingString = line.Substring(startIndex + startString.Length);
-                        int endIndex = remainingString.IndexOf(")");
+                        int endIndex;
+
+                        // Case of Call(file, goto line)
+                        if(remainingString.Contains(",") && remainingString.IndexOf(",") < remainingString.IndexOf(")"))
+                        {
+                            endIndex = remainingString.IndexOf(",");
+                        } else
+                        {
+                            endIndex = remainingString.IndexOf(")");
+                        }
+
                         string path = remainingString.Substring(0, endIndex);
                         CheckPathValidity("", textBox1.Text, path);
                     }
@@ -525,7 +548,7 @@ namespace TeaseAIScriptChecker
                 gotoPointers[targetPoint] = value;
             }
 
-            value.Add(" in string '" + currentLineString + "' in line " + currentLine + " in file '" + currentFilePath + "' ");
+            value.Add(" in string '" + currentLineString + "' in line " + currentLine);
 
             WriteLineToLog("Found pointer to " + targetPoint + " in line " + currentLine, true);
         }
